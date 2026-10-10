@@ -1,6 +1,6 @@
 import { ConcreteMixInput, PredictionResponse, MetaResponse, HealthResponse } from "@/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://compressive-strength-web-backend.vercel.app";
 
 export class ApiError extends Error {
   status: number;
