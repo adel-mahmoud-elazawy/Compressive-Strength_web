@@ -1,10 +1,15 @@
+import logging
 import os
+
 import joblib
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple
 from app.config import MODEL_PATH
+from app.errors import ModelUnavailableError, PredictionError
 from app.schemas import ConcreteMixInput, PredictionResponse, MetaResponse, FieldMeta, MixExample
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Exact feature engineering function from training & UI notebook
@@ -37,27 +42,39 @@ class ConcreteModelManager:
         self.classifier = None
         self.cutoff: float = 33.72
         self.is_loaded = False
-        self.load_model()
+        self.load_error: str | None = None
 
-    def load_model(self):
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"Model bundle file not found at: {self.model_path}. "
-                "Ensure concrete_model.pkl is placed in the backend directory."
+    def load_model(self) -> bool:
+        self.is_loaded = False
+        self.load_error = None
+        try:
+            if not os.path.exists(self.model_path):
+                raise FileNotFoundError(
+                    f"Model bundle file not found at: {self.model_path}. "
+                    "Ensure concrete_model.pkl is placed in the backend directory."
+                )
+
+            bundle = joblib.load(self.model_path)
+            self.regressor = bundle["regressor"]
+            self.classifier = bundle.get("classifier", None)
+            self.cutoff = float(bundle["cutoff"])
+            self.is_loaded = True
+
+            logger.info("Loaded model bundle: %s", os.path.basename(self.model_path))
+            logger.info(
+                "Regressor: %s, Cutoff: %.2f MPa",
+                type(self.regressor).__name__,
+                self.cutoff,
             )
-        
-        bundle = joblib.load(self.model_path)
-        self.regressor = bundle["regressor"]
-        self.classifier = bundle.get("classifier", None)
-        self.cutoff = float(bundle["cutoff"])
-        self.is_loaded = True
-
-        print(f"[ModelManager] Loaded model bundle: {os.path.basename(self.model_path)}")
-        print(f"[ModelManager] Regressor: {type(self.regressor).__name__}, Cutoff: {self.cutoff:.2f} MPa")
+            return True
+        except Exception as exc:
+            self.load_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("Failed to load model bundle: %s", self.load_error)
+            return False
 
     def predict(self, mix_input: ConcreteMixInput) -> PredictionResponse:
         if not self.is_loaded:
-            self.load_model()
+            raise ModelUnavailableError("Model bundle is not loaded")
 
         # Build raw DataFrame in exact feature order
         raw_dict = {
@@ -73,14 +90,17 @@ class ConcreteModelManager:
         df_raw = pd.DataFrame([raw_dict])
         df_featured = add_features(df_raw)
 
-        # Regression prediction
-        predicted_strength = float(self.regressor.predict(df_featured)[0])
+        # Regression prediction and classification decision.
+        # Inference failures are typed so the API can map them to a safe 500.
+        try:
+            predicted_strength = float(self.regressor.predict(df_featured)[0])
 
-        # Classification decision
-        if self.classifier is None:
-            is_strong = predicted_strength >= self.cutoff
-        else:
-            is_strong = bool(self.classifier.predict(df_featured)[0] == 1)
+            if self.classifier is None:
+                is_strong = predicted_strength >= self.cutoff
+            else:
+                is_strong = bool(self.classifier.predict(df_featured)[0] == 1)
+        except Exception as exc:
+            raise PredictionError("Inference failed") from exc
 
         label = "STRONG" if is_strong else "WEAK"
         wc_ratio = float(df_featured["Water_Cement_Ratio"].iloc[0])
