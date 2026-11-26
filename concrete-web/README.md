@@ -106,7 +106,7 @@ Deploying **Frontend** and **Backend** as **two separate Vercel projects** ensur
    - **Root Directory:** Click **Edit** and select **`concrete-web/backend`**.
    - **Framework Preset:** Select **Other**.
 4. **Environment Variables:**
-   - Add `CORS_ORIGINS`: Set to `*` or your frontend domain (e.g. `https://concrete-strength-frontend.vercel.app`).
+   - Add `CORS_ORIGINS`: set it to your deployed frontend origin, e.g. `https://concrete-strength-frontend.vercel.app`. This is **required** for a deployed frontend: the backend default allows only `http://localhost:3000` and `http://127.0.0.1:3000`. Do not use `*`; it also disables credentialed browser requests.
 5. Click **Deploy**.
 6. Once deployed, copy your backend URL (e.g., `https://concrete-strength-backend.vercel.app`). Verify by opening `https://concrete-strength-backend.vercel.app/health`.
 
